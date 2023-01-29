@@ -1,5 +1,6 @@
 # Must use a Cuda version 11+
-FROM pytorch/pytorch:1.12.1-cuda11.3-cudnn8-runtime
+#FROM pytorch/pytorch:1.12.1-cuda11.3-cudnn8-runtime
+FROM gadicc/diffusers-api-base:python3.9-pytorch1.12.1-cuda11.6-xformers
 
 WORKDIR /
 
@@ -7,9 +8,6 @@ WORKDIR /
 RUN apt-get update && apt-get install -y git
 
 # Install python packages
-RUN pip3 install --upgrade pip
-RUN pip install --quiet diffusers==0.8.0
-RUN pip install --quiet https://github.com/brian6091/xformers-wheels/releases/download/0.0.15.dev0%2B4c06c79/xformers-0.0.15.dev0+4c06c79.d20221205-cp38-cp38-linux_x86_64.whl
 COPY requirements.txt requirements.txt
 RUN pip3 install -r requirements.txt
 
