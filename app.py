@@ -384,23 +384,6 @@ def make_controller(prompts: List[str], is_replace_controller: bool, cross_repla
                                        self_replace_steps=self_replace_steps, equalizer=eq, local_blend=lb, controller=controller)
     return controller
 
-
-def show_cross_attention(attention_store: AttentionStore, res: int, from_where: List[str], select: int = 0):
-    tokens = tokenizer.encode(prompts[select])
-    decoder = tokenizer.decode
-    attention_maps = aggregate_attention(attention_store, res, from_where, True, select)
-    images = []
-    for i in range(len(tokens)):
-        image = attention_maps[:, :, i]
-        image = 255 * image / image.max()
-        image = image.unsqueeze(-1).expand(*image.shape, 3)
-        image = image.numpy().astype(np.uint8)
-        image = np.array(Image.fromarray(image).resize((256, 256)))
-        image = ptp_utils.text_under_image(image, decoder(int(tokens[i])))
-        images.append(image)
-    ptp_utils.view_images(np.stack(images, axis=0))
-    
-
 def show_self_attention_comp(attention_store: AttentionStore, res: int, from_where: List[str],
                         max_com=10, select: int = 0):
     attention_maps = aggregate_attention(attention_store, res, from_where, False, select).numpy().reshape((res ** 2, res ** 2))
