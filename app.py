@@ -35,11 +35,22 @@ def inference(model_inputs:dict) -> dict:
     # Parse out your arguments
     image_base64 = model_inputs.get('image_base64', None)
     prompt = model_inputs.get('prompt', None)
-    height = model_inputs.get('height', 512)
-    width = model_inputs.get('width', 512)
+    edited_prompt = model_inputs.get('edited_prompt', None)
     num_inference_steps = model_inputs.get('num_inference_steps', 50)
     guidance_scale = model_inputs.get('guidance_scale', 7.5)
-    input_seed = model_inputs.get("seed",None)
+    input_seed = model_inputs.get("seed", None)
+    # not yet
+    height = model_inputs.get('height', 512)
+    width = model_inputs.get('width', 512)
+
+    cross_replace_steps = model_inputs.get('cross_replace_steps', {'default_': .8,})
+    self_replace_steps = model_inputs.get('self_replace_steps', .5)
+    # not 100% sure if we have to convert from lists to tuples, but make it work first
+    blend_word = tuple(tuple(l) for l in model_inputs.get('blend_word', [])) # ((('blue',), ("red",))) # for local edit. If it is not local yet - use only the source object: blend_word = model_inputs.get('blend_word', None) # ((('cat',), ("cat",))).
+    eq_params = model_inputs.get('eq_params', {"words": [], "values": []}) # {"words": ("red",), "values": (2,)} # amplify attention to the word "red" by *2 
+    eq_params["words"] = tuple(eq_params["words"])
+    eq_params["values"] = tuple(eq_params["values"])
+    # print("Image is highly affected by the self_replace_steps, usually 0.4 is a good default value, but you may want to try the range 0.3,0.4,0.5,0.7 ")
     
     #If "seed" is not sent, we won't specify a seed in the call
     generator = None
@@ -48,13 +59,19 @@ def inference(model_inputs:dict) -> dict:
     
     if prompt == None:
         return {'message': "No prompt provided"}
+    if edited_prompt == None:
+        return {'message': "No edited_prompt provided"}
     if image_base64 == None:
         return {'message': "No input provided"}
 
-    input_image = PIL.Image.open(BytesIO(base64.b64decode(init_image_base64.encode('utf-8'))))
+    input_image = PIL.Image.open(BytesIO(base64.b64decode(image_base64.encode('utf-8'))))
     
-    NUM_DDIM_STEPS = 50
-    GUIDANCE_SCALE = 7.5
+    #their code sucks
+    global NUM_DDIM_STEPS 
+    global GUIDANCE_SCALE
+    global MAX_NUM_WORDS
+    NUM_DDIM_STEPS = num_inference_steps
+    GUIDANCE_SCALE = guidance_scale
     MAX_NUM_WORDS = 77
     ldm_stable = model
     try:
@@ -67,21 +84,12 @@ def inference(model_inputs:dict) -> dict:
     # Run the model
     # with autocast("cuda"):
 
-    #image_path = "/content/null-text-inversion-colab/tay.jpg"
-    #prompt = "a woman with blonde hair and a blue scarf"
-    (image_gt, image_enc), x_t, uncond_embeddings = null_inversion.invert(input_image, prompt, offsets=(0,0,0,0), verbose=True)
-
+    # the num_inner_steps=10 makes this 500(50*10)! Not sure if that's really necessary
     #WDYTM???
     #print("Modify or remove offsets according to your image!")
+    (image_gt, image_enc), x_t, uncond_embeddings = null_inversion.invert(input_image, prompt, num_inner_steps=10, offsets=(0,0,0,0), verbose=True)
     
-    prompts = ["a woman with blonde hair and a blue scarf",
-           "a woman with blonde hair and a red scarf"]
-
-    cross_replace_steps = {'default_': .8,}
-    self_replace_steps = .5
-    blend_word = ((('blue',), ("red",))) # for local edit. If it is not local yet - use only the source object: blend_word = ((('cat',), ("cat",))).
-    eq_params = {"words": ("red",), "values": (2,)} # amplify attention to the word "red" by *2 
-    # print("Image is highly affected by the self_replace_steps, usually 0.4 is a good default value, but you may want to try the range 0.3,0.4,0.5,0.7 ")
+    prompts = [prompt]
 
     controller = make_controller(prompts, True, cross_replace_steps, self_replace_steps, blend_word, eq_params)
     images, x_t = text2image_ldm_stable(ldm_stable, prompts, controller, latent=latent, num_inference_steps=steps, guidance_scale=GUIDANCE_SCALE, generator=generator, uncond_embeddings=uncond_embeddings)
@@ -145,13 +153,9 @@ class LocalBlend:
         self.start_blend = int(start_blend * NUM_DDIM_STEPS)
         self.counter = 0 
         self.th=th
-
-
         
         
 class EmptyControl:
-    
-    
     def step_callback(self, x_t):
         return x_t
     
