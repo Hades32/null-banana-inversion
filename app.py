@@ -46,7 +46,7 @@ def inference(model_inputs:dict) -> dict:
     cross_replace_steps = model_inputs.get('cross_replace_steps', {'default_': .8,})
     self_replace_steps = model_inputs.get('self_replace_steps', .5)
     # not 100% sure if we have to convert from lists to tuples, but make it work first
-    blend_word = tuple(tuple(l) for l in model_inputs.get('blend_word', [])) # ((('blue',), ("red",))) # for local edit. If it is not local yet - use only the source object: blend_word = model_inputs.get('blend_word', None) # ((('cat',), ("cat",))).
+    blend_word = tuple(tuple(l) for l in model_inputs.get('blend_word', [])) # ((('blue',), ("red",))) # for local edit. If it is not local yet - use only the source object: blend_word = ((('cat',), ("cat",))).
     eq_params = model_inputs.get('eq_params', {"words": [], "values": []}) # {"words": ("red",), "values": (2,)} # amplify attention to the word "red" by *2 
     eq_params["words"] = tuple(eq_params["words"])
     eq_params["values"] = tuple(eq_params["values"])
