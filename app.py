@@ -66,6 +66,7 @@ def inference(model_inputs:dict) -> dict:
         return {'message': "No input provided"}
 
     input_image = Image.open(BytesIO(base64.b64decode(image_base64.encode('utf-8'))))
+    input_image_arr = np.array(input_image)[:, :, :3]
     
     #their code sucks
     global NUM_DDIM_STEPS 
@@ -90,7 +91,7 @@ def inference(model_inputs:dict) -> dict:
     #print("Modify or remove offsets according to your image!")
     print("running inversion")
     invStart = time.monotonic_ns()
-    (image_gt, image_enc), x_t, uncond_embeddings = null_inversion.invert(input_image, prompt, num_inner_steps=10, offsets=(0,0,0,0), verbose=True)
+    (image_gt, image_enc), x_t, uncond_embeddings = null_inversion.invert(input_image_arr, prompt, num_inner_steps=10, offsets=(0,0,0,0), verbose=True)
     print(f"finished inversion in {(time.monotonic_ns() - invStart)/1_000_000_000}s")
     prompts = [prompt]
 
