@@ -32,7 +32,7 @@ def init():
 def inference(model_inputs:dict) -> dict:
     global model
 
-    # Parse out your arguments
+    print("parsing out your arguments", model_inputs)
     image_base64 = model_inputs.get('image_base64', None)
     prompt = model_inputs.get('prompt', None)
     edited_prompt = model_inputs.get('edited_prompt', None)
@@ -87,12 +87,17 @@ def inference(model_inputs:dict) -> dict:
     # the num_inner_steps=10 makes this 500(50*10)! Not sure if that's really necessary
     #WDYTM???
     #print("Modify or remove offsets according to your image!")
+    print("running inversion")
+    invStart = time.monotonic_ns()
     (image_gt, image_enc), x_t, uncond_embeddings = null_inversion.invert(input_image, prompt, num_inner_steps=10, offsets=(0,0,0,0), verbose=True)
-    
+    print(f"finished inversion in {(time.monotonic_ns() - invStart)/1_000_000_000}s")
     prompts = [prompt]
 
+    print("running ldm stable")
+    ldmStart = time.monotonic_ns()
     controller = make_controller(prompts, True, cross_replace_steps, self_replace_steps, blend_word, eq_params)
     images, x_t = text2image_ldm_stable(ldm_stable, prompts, controller, latent=latent, num_inference_steps=steps, guidance_scale=GUIDANCE_SCALE, generator=generator, uncond_embeddings=uncond_embeddings)
+    print(f"finished ldm stable in {(time.monotonic_ns() - ldmStart)/1_000_000_000}s")
 
     buffered = BytesIO()
     images[0].save(buffered,format="PNG")
