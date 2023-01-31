@@ -64,7 +64,7 @@ def inference(model_inputs:dict) -> dict:
     if image_base64 == None:
         return {'message': "No input provided"}
 
-    input_image = PIL.Image.open(BytesIO(base64.b64decode(image_base64.encode('utf-8'))))
+    input_image = Image.open(BytesIO(base64.b64decode(image_base64.encode('utf-8'))))
     
     #their code sucks
     global NUM_DDIM_STEPS 
