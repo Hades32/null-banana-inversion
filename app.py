@@ -17,6 +17,7 @@ from torch.optim.adam import Adam
 from PIL import Image
 
 LOW_RESOURCE = False 
+device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')
 
 # Init is ran on server startup
 # Load your model to GPU as a global variable here using the variable name "model"
@@ -25,7 +26,6 @@ def init():
     HF_AUTH_TOKEN = os.getenv("HF_AUTH_TOKEN")
     
     scheduler = DDIMScheduler(beta_start=0.00085, beta_end=0.012, beta_schedule="scaled_linear", clip_sample=False, set_alpha_to_one=False)
-    device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')
     model = StableDiffusionPipeline.from_pretrained("CompVis/stable-diffusion-v1-4", scheduler=scheduler, use_auth_token=HF_AUTH_TOKEN).to("cuda").to(device)
 
 # Inference is ran for every server call
@@ -487,7 +487,7 @@ class NullInversion:
                 latents = image
             else:
                 image = torch.from_numpy(image).float() / 127.5 - 1
-                image = image.permute(2, 0, 1).unsqueeze(0).to(device)
+                image = image.permute(2, 0, 1).unsqueeze(0).to(self.model.device)
                 latents = self.model.vae.encode(image)['latent_dist'].mean
                 latents = latents * 0.18215
         return latents
