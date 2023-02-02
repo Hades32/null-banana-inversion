@@ -41,7 +41,6 @@ def inference(model_inputs:dict) -> dict:
     print("parsing out your arguments", model_inputs)
     image_base64 = model_inputs.get('image_base64', None)
     prompts: List[str] = model_inputs.get('prompts', None)
-    edited_prompt = model_inputs.get('edited_prompt', None)
     num_inference_steps = model_inputs.get('num_inference_steps', 50)
     guidance_scale = model_inputs.get('guidance_scale', 7.5)
     input_seed = model_inputs.get("seed", None)
@@ -65,8 +64,6 @@ def inference(model_inputs:dict) -> dict:
     
     if prompts is None:
         return {'message': "No prompt provided"}
-    if edited_prompt is None:
-        return {'message': "No edited_prompt provided"}
     if image_base64 is None:
         return {'message': "No input provided"}
 
