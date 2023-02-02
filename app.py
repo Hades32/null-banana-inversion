@@ -4,7 +4,6 @@ import os
 import time
 
 from typing import Optional, Union, Tuple, List, Callable, Dict
-from tqdm.notebook import tqdm
 import torch
 from diffusers import StableDiffusionPipeline, DDIMScheduler
 import torch.nn.functional as nnf
@@ -537,7 +536,6 @@ class NullInversion:
         uncond_embeddings, cond_embeddings = self.context.chunk(2)
         uncond_embeddings_list = []
         latent_cur = latents[-1]
-        bar = tqdm(total=num_inner_steps * NUM_DDIM_STEPS)
         for i in range(NUM_DDIM_STEPS):
             uncond_embeddings = uncond_embeddings.clone().detach()
             uncond_embeddings.requires_grad = True
@@ -555,16 +553,12 @@ class NullInversion:
                 loss.backward()
                 optimizer.step()
                 loss_item = loss.item()
-                bar.update()
                 if loss_item < epsilon + i * 2e-5:
                     break
-            for j in range(j + 1, num_inner_steps):
-                bar.update()
             uncond_embeddings_list.append(uncond_embeddings[:1].detach())
             with torch.no_grad():
                 context = torch.cat([uncond_embeddings, cond_embeddings])
                 latent_cur = self.get_noise_pred(latent_cur, t, False, context)
-        bar.close()
         return uncond_embeddings_list
     
     def invert(self, image_path: str, prompt: str, offsets=(0,0,0,0), num_inner_steps=10, early_stop_epsilon=1e-5, verbose=False):
@@ -626,7 +620,7 @@ def text2image_ldm_stable(
     latent, latents = ptp_utils.init_latent(latent, model, height, width, generator, batch_size)
     model.scheduler.set_timesteps(num_inference_steps)
     # start_time = num_inference_steps
-    for i, t in enumerate(tqdm(model.scheduler.timesteps[-start_time:])):
+    for i, t in enumerate(model.scheduler.timesteps[-start_time:]):
         if uncond_embeddings_ is None:
             context = torch.cat([uncond_embeddings[i].expand(*text_embeddings.shape), text_embeddings])
         else:
