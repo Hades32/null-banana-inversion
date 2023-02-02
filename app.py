@@ -1,19 +1,19 @@
-import base64
-from io import BytesIO
-import os
-import time
-
-from typing import Optional, Union, Tuple, List, Callable, Dict
-import torch
-from diffusers import StableDiffusionPipeline, DDIMScheduler
-import torch.nn.functional as nnf
-import numpy as np
 import abc
+import base64
+import numpy as np
+import os
+import shutil
+import time
+import torch
+import torch.nn.functional as nnf
+from PIL import Image
+from diffusers import StableDiffusionPipeline, DDIMScheduler
+from io import BytesIO
+from torch.optim.adam import Adam
+from typing import Optional, Union, Tuple, List, Callable, Dict
+
 import ptp_utils
 import seq_aligner
-import shutil
-from torch.optim.adam import Adam
-from PIL import Image
 
 LOW_RESOURCE = False 
 device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')
@@ -24,7 +24,7 @@ global GUIDANCE_SCALE
 global MAX_NUM_WORDS
 global tokenizer
 
-# Init is ran on server startup
+# Init is run on server startup
 # Load your model to GPU as a global variable here using the variable name "model"
 def init():
     global model
@@ -33,14 +33,14 @@ def init():
     scheduler = DDIMScheduler(beta_start=0.00085, beta_end=0.012, beta_schedule="scaled_linear", clip_sample=False, set_alpha_to_one=False)
     model = StableDiffusionPipeline.from_pretrained("CompVis/stable-diffusion-v1-4", scheduler=scheduler, use_auth_token=hf_auth_token).to("cuda").to(device)
 
-# Inference is ran for every server call
+# Inference is run for every server call
 # Reference your preloaded global model variable here.
 def inference(model_inputs:dict) -> dict:
     global model
 
     print("parsing out your arguments", model_inputs)
     image_base64 = model_inputs.get('image_base64', None)
-    prompt = model_inputs.get('prompt', None)
+    prompts: List[str] = model_inputs.get('prompts', None)
     edited_prompt = model_inputs.get('edited_prompt', None)
     num_inference_steps = model_inputs.get('num_inference_steps', 50)
     guidance_scale = model_inputs.get('guidance_scale', 7.5)
@@ -63,7 +63,7 @@ def inference(model_inputs:dict) -> dict:
     if input_seed is not None:
         generator = torch.Generator("cuda").manual_seed(input_seed)
     
-    if prompt is None:
+    if prompts is None:
         return {'message': "No prompt provided"}
     if edited_prompt is None:
         return {'message': "No edited_prompt provided"}
@@ -97,14 +97,13 @@ def inference(model_inputs:dict) -> dict:
     #print("Modify or remove offsets according to your image!")
     print("running inversion")
     invStart = time.monotonic_ns()
-    (image_gt, image_enc), x_t, uncond_embeddings = null_inversion.invert(input_image_arr, prompt, num_inner_steps=10, offsets=(0,0,0,0), verbose=True)
+    (image_gt, image_enc), x_t, uncond_embeddings = null_inversion.invert(input_image_arr, prompts[0], num_inner_steps=10, offsets=(0,0,0,0), verbose=True)
     print(f"finished inversion in {(time.monotonic_ns() - invStart)/1_000_000_000}s")
-    prompts = [prompt]
 
     print("running ldm stable")
     ldmStart = time.monotonic_ns()
     controller = make_controller(prompts, True, cross_replace_steps, self_replace_steps, blend_word, eq_params)
-    images, x_t = text2image_ldm_stable(ldm_stable, prompts, controller, latent=latent, num_inference_steps=steps, guidance_scale=GUIDANCE_SCALE, generator=generator, uncond_embeddings=uncond_embeddings)
+    images, x_t = text2image_ldm_stable(ldm_stable, prompts, controller, latent=x_t, num_inference_steps=num_inference_steps, guidance_scale=GUIDANCE_SCALE, generator=generator, uncond_embeddings=uncond_embeddings)
     print(f"finished ldm stable in {(time.monotonic_ns() - ldmStart)/1_000_000_000}s")
 
     buffered = BytesIO()
@@ -368,7 +367,7 @@ def get_equalizer(text: str, word_select: Union[int, Tuple[int, ...]], values: U
         equalizer[:, inds] = val
     return equalizer
 
-def aggregate_attention(attention_store: AttentionStore, res: int, from_where: List[str], is_cross: bool, select: int):
+def aggregate_attention(attention_store: AttentionStore, res: int, from_where: List[str], is_cross: bool, select: int, prompts: List[str]):
     out = []
     attention_maps = attention_store.get_average_attention()
     num_pixels = res ** 2
