@@ -18,14 +18,20 @@ from PIL import Image
 LOW_RESOURCE = False 
 device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')
 
+global model
+global NUM_DDIM_STEPS
+global GUIDANCE_SCALE
+global MAX_NUM_WORDS
+global tokenizer
+
 # Init is ran on server startup
 # Load your model to GPU as a global variable here using the variable name "model"
 def init():
     global model
-    HF_AUTH_TOKEN = os.getenv("HF_AUTH_TOKEN")
+    hf_auth_token = os.getenv("HF_AUTH_TOKEN")
     
     scheduler = DDIMScheduler(beta_start=0.00085, beta_end=0.012, beta_schedule="scaled_linear", clip_sample=False, set_alpha_to_one=False)
-    model = StableDiffusionPipeline.from_pretrained("CompVis/stable-diffusion-v1-4", scheduler=scheduler, use_auth_token=HF_AUTH_TOKEN).to("cuda").to(device)
+    model = StableDiffusionPipeline.from_pretrained("CompVis/stable-diffusion-v1-4", scheduler=scheduler, use_auth_token=hf_auth_token).to("cuda").to(device)
 
 # Inference is ran for every server call
 # Reference your preloaded global model variable here.
@@ -54,14 +60,14 @@ def inference(model_inputs:dict) -> dict:
     
     #If "seed" is not sent, we won't specify a seed in the call
     generator = None
-    if input_seed != None:
+    if input_seed is not None:
         generator = torch.Generator("cuda").manual_seed(input_seed)
     
-    if prompt == None:
+    if prompt is None:
         return {'message': "No prompt provided"}
-    if edited_prompt == None:
+    if edited_prompt is None:
         return {'message': "No edited_prompt provided"}
-    if image_base64 == None:
+    if image_base64 is None:
         return {'message': "No input provided"}
 
     input_image = Image.open(BytesIO(base64.b64decode(image_base64.encode('utf-8'))))
@@ -79,6 +85,7 @@ def inference(model_inputs:dict) -> dict:
         ldm_stable.disable_xformers_memory_efficient_attention()
     except AttributeError:
         print("Attribute disable_xformers_memory_efficient_attention() is missing")
+    global tokenizer
     tokenizer = ldm_stable.tokenizer
     null_inversion = NullInversion(ldm_stable)
 
@@ -109,7 +116,7 @@ def inference(model_inputs:dict) -> dict:
 
 class LocalBlend:
     
-    def get_mask(self, maps, alpha, use_pool):
+    def get_mask(self, maps, alpha, use_pool, x_t):
         k = 1
         maps = (maps * alpha).sum(-1).mean(1)
         if use_pool:
@@ -127,9 +134,9 @@ class LocalBlend:
             maps = attention_store["down_cross"][2:4] + attention_store["up_cross"][:3]
             maps = [item.reshape(self.alpha_layers.shape[0], -1, 1, 16, 16, MAX_NUM_WORDS) for item in maps]
             maps = torch.cat(maps, dim=1)
-            mask = self.get_mask(maps, self.alpha_layers, True)
+            mask = self.get_mask(maps, self.alpha_layers, True, x_t)
             if self.substruct_layers is not None:
-                maps_sub = ~self.get_mask(maps, self.substruct_layers, False)
+                maps_sub = ~self.get_mask(maps, self.substruct_layers, False, x_t)
                 mask = mask * maps_sub
             mask = mask.float()
             x_t = x_t[:1] + mask * (x_t - x_t[:1])
@@ -374,12 +381,11 @@ def aggregate_attention(attention_store: AttentionStore, res: int, from_where: L
     out = out.sum(0) / out.shape[0]
     return out.cpu()
 
-
 def make_controller(prompts: List[str], is_replace_controller: bool, cross_replace_steps: Dict[str, float], self_replace_steps: float, blend_words=None, equilizer_params=None) -> AttentionControlEdit:
     if blend_words is None:
         lb = None
     else:
-        lb = LocalBlend(prompts, blend_word)
+        lb = LocalBlend(prompts, blend_words)
     if is_replace_controller:
         controller = AttentionReplace(prompts, NUM_DDIM_STEPS, cross_replace_steps=cross_replace_steps, self_replace_steps=self_replace_steps, local_blend=lb)
     else:
@@ -389,21 +395,6 @@ def make_controller(prompts: List[str], is_replace_controller: bool, cross_repla
         controller = AttentionReweight(prompts, NUM_DDIM_STEPS, cross_replace_steps=cross_replace_steps,
                                        self_replace_steps=self_replace_steps, equalizer=eq, local_blend=lb, controller=controller)
     return controller
-
-def show_self_attention_comp(attention_store: AttentionStore, res: int, from_where: List[str],
-                        max_com=10, select: int = 0):
-    attention_maps = aggregate_attention(attention_store, res, from_where, False, select).numpy().reshape((res ** 2, res ** 2))
-    u, s, vh = np.linalg.svd(attention_maps - np.mean(attention_maps, axis=1, keepdims=True))
-    images = []
-    for i in range(max_com):
-        image = vh[i].reshape(res, res)
-        image = image - image.min()
-        image = 255 * image / image.max()
-        image = np.repeat(np.expand_dims(image, axis=2), 3, axis=2).astype(np.uint8)
-        image = Image.fromarray(image).resize((256, 256))
-        image = np.array(image)
-        images.append(image)
-    ptp_utils.view_images(np.concatenate(images, axis=1))
 
 def load_512(image_path, left=0, right=0, top=0, bottom=0):
     if type(image_path) is str:
@@ -632,15 +623,3 @@ def text2image_ldm_stable(
     else:
         image = latents
     return image, latent
-
-
-
-def run_and_display(prompts, controller, latent=None, run_baseline=False, generator=None, uncond_embeddings=None, verbose=True, steps=50):
-    if run_baseline:
-        print("w.o. prompt-to-prompt")
-        images, latent = run_and_display(prompts, EmptyControl(), latent=latent, run_baseline=False, generator=generator)
-        print("with prompt-to-prompt")
-    images, x_t = text2image_ldm_stable(ldm_stable, prompts, controller, latent=latent, num_inference_steps=steps, guidance_scale=GUIDANCE_SCALE, generator=generator, uncond_embeddings=uncond_embeddings)
-    if verbose:
-        ptp_utils.view_images(images)
-    return images, x_t
