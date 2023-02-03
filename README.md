@@ -1,34 +1,48 @@
 
-# 🍌 Banana Serverless
+# 🍌 Null Text Prompt to Prompt editing
 
-This repo gives a basic framework for serving Stable Diffusion in production using simple HTTP servers.
+AKA editing a real image with text.
 
-## Instant Deploy
-Stable Diffusion is now available as a prebult model on Banana! [See how to deploy Stable Diffusion in seconds](https://docs.banana.dev/banana-docs/core-concepts/inference-server/1-click-deploy).
+This is banana.dev conversion of https://github.com/google/prompt-to-prompt#editing-real-images
 
+![example](./example.png)
 
-# Quickstart
+## Usage
 
-If you want to customize beyond the prebuilt model:
+```js
+import banana from "@banana-dev/banana-dev";
+import fs from "fs/promises";
 
-**[Follow the quickstart guide in Banana's documentation to use this repo](https://docs.banana.dev/banana-docs/quickstart).** 
+const apiKey = process.env.API_KEY;
+const modelKey = process.env.MODEL_KEY;
 
-*(choose "GitHub Repository" deployment method)*
+const modelParameters = {
+  image_base64: Buffer.from(await fs.readFile("./tay1.png")).toString("base64"),
+  prompts: ["a woman with blonde hair and a blue scarf", "a woman with blonde hair and a yellow scarf"],
+  blend_word: [["blue"], ["yellow"]],
+  eq_params: { words: ["yellow"], values: [2] },
+  num_inference_steps: 50,
+  guidance_scale: 7.5,
+  height: 512,
+  width: 512,
+  cross_replace_steps: { default_: 0.8 },
+  self_replace_steps: 0.5,
+  seed: new Date().getTime(),
+};
 
-### Additional Steps (outside of quickstart guide)
+try {
+  const res = await banana.run(apiKey, modelKey, modelParameters);
+  const { image_base64 } = res.modelOutputs[0];
+  console.log("in:", JSON.stringify(modelParameters));
+  delete res.modelOutputs[0].image_base64;
+  console.log("res:", JSON.stringify(res));
 
-1. Create your own private repo and copy the files from this template repo into it. You'll want a private repo so that your huggingface keys are secure.
-2. Create huggingface account to get permission to download and run [Stable Diffusion](https://huggingface.co/CompVis/stable-diffusion-v1-4) text-to-image model.
-  - Accept terms and conditions for the use of the v1-4 [Stable Diffusion](https://huggingface.co/CompVis/stable-diffusion-v1-4)
-3. Edit the `dockerfile` in your forked repo with `ENV HF_AUTH_TOKEN=your_auth_token`
-
-
-# Helpful Links
-Understand the 🍌 [Serverless framework](https://docs.banana.dev/banana-docs/core-concepts/inference-server/serverless-framework) and functionality of each file within it.
-
-Generalize this framework to [deploy anything on Banana](https://docs.banana.dev/banana-docs/resources/how-to-serve-anything-on-banana).
-
-
-<br>
+  const img = Buffer.from(image_base64, "base64");
+  await fs.writeFile("./out.png", img);
+} catch (ex) {
+  console.error("ERROR", ex);
+  process.exit(1);
+}
+```
 
 ## Use Banana for scale.
