@@ -104,7 +104,7 @@ def inference(model_inputs:dict) -> dict:
     print(f"finished ldm stable in {(time.monotonic_ns() - ldmStart)/1_000_000_000}s")
 
     buffered = BytesIO()
-    conv_images(images)[0].save(buffered,format="PNG")
+    conv_images(images).save(buffered,format="PNG")
     image_base64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
 
     # Return the results as a dictionary
