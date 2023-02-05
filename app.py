@@ -89,6 +89,7 @@ def inference(model_inputs:dict) -> dict:
     global tokenizer
     tokenizer = ldm_stable.tokenizer
     null_inversion = NullInversion(ldm_stable)
+    controller = make_controller(prompts, True, cross_replace_steps, self_replace_steps, blend_word, eq_params)
 
     # Run the model
     # with autocast("cuda"):
@@ -103,7 +104,6 @@ def inference(model_inputs:dict) -> dict:
 
     print("running ldm stable")
     ldmStart = time.monotonic_ns()
-    controller = make_controller(prompts, True, cross_replace_steps, self_replace_steps, blend_word, eq_params)
     images, x_t = text2image_ldm_stable(ldm_stable, prompts, controller, latent=x_t, num_inference_steps=num_inference_steps, guidance_scale=GUIDANCE_SCALE, generator=generator, uncond_embeddings=uncond_embeddings)
     print(f"finished ldm stable in {(time.monotonic_ns() - ldmStart)/1_000_000_000}s")
 
