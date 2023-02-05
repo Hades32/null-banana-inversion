@@ -1,0 +1,40 @@
+{
+  "name": "Null-Text Inversion for Editing Real Images",
+  "category": "Computer Vision",
+  "example_input": {
+    "image_base64": "iVBORw0KGgoAAAANSUhEUgAACSgAAASwCAYA",
+    "prompts": [
+      "a beautiful young woman with brown hair and a black jacket",
+      "a beautiful young woman with brown hair and a yellow jacket"
+    ],
+    "blend_word": [
+      [
+        "black"
+      ],
+      [
+        "yellow"
+      ]
+    ],
+    "eq_params": {
+      "words": [
+        "yellow"
+      ],
+      "values": [
+        2
+      ]
+    },
+    "num_inference_steps": 50,
+    "guidance_scale": 7.5,
+    "height": 512,
+    "width": 512,
+    "cross_replace_steps": {
+      "default_": 0.8
+    },
+    "self_replace_steps": 0.5,
+    "seed": 1234
+  },
+  "example_output": {
+    "image_base64": "iVBORw0KGgoAAAANSUhEUgAACSgAAASwCAYA..."
+  },
+  "version": "1.0.0"
+}
