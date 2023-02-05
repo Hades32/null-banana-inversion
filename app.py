@@ -50,11 +50,15 @@ def inference(model_inputs:dict) -> dict:
 
     cross_replace_steps = model_inputs.get('cross_replace_steps', {'default_': .8,})
     self_replace_steps = model_inputs.get('self_replace_steps', .5)
+    blend_word = model_inputs.get('blend_word', None)
     # not 100% sure if we have to convert from lists to tuples, but make it work first
-    blend_word = tuple(tuple(l) for l in model_inputs.get('blend_word', [])) # ((('blue',), ("red",))) # for local edit. If it is not local yet - use only the source object: blend_word = ((('cat',), ("cat",))).
-    eq_params = model_inputs.get('eq_params', {"words": [], "values": []}) # {"words": ("red",), "values": (2,)} # amplify attention to the word "red" by *2 
-    eq_params["words"] = tuple(eq_params["words"])
-    eq_params["values"] = tuple(eq_params["values"])
+    if blend_word is not None:
+        blend_word = tuple(tuple(l) for l in blend_word) # ((('blue',), ("red",))) # for local edit. If it is not local yet - use only the source object: blend_word = ((('cat',), ("cat",))).
+    eq_params = model_inputs.get('eq_params', None) # {"words": ("red",), "values": (2,)} # amplify attention to the word "red" by *2
+    # not 100% sure if we have to convert from lists to tuples, but make it work first
+    if eq_params is not None:
+        eq_params["words"] = tuple(eq_params["words"])
+        eq_params["values"] = tuple(eq_params["values"])
     # print("Image is highly affected by the self_replace_steps, usually 0.4 is a good default value, but you may want to try the range 0.3,0.4,0.5,0.7 ")
     
     #If "seed" is not sent, we won't specify a seed in the call
