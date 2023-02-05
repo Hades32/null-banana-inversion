@@ -38,7 +38,7 @@ def inference(request):
         output = user_src.inference(model_inputs)
         return response.json(output)
     except Exception as error:
-        return response.json({"error": error})
+        return response.json({"error": error.__str__()})
 
 
 if __name__ == '__main__':

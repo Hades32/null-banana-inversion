@@ -1,16 +1,16 @@
 import abc
 import base64
-import numpy as np
 import os
-import shutil
 import time
+from io import BytesIO
+from typing import Optional, Union, Tuple, List, Dict
+
+import numpy as np
 import torch
 import torch.nn.functional as nnf
 from PIL import Image
 from diffusers import StableDiffusionPipeline, DDIMScheduler
-from io import BytesIO
 from torch.optim.adam import Adam
-from typing import Optional, Union, Tuple, List, Callable, Dict
 
 import ptp_utils
 import seq_aligner
