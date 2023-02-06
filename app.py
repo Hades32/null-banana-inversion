@@ -15,7 +15,7 @@ from torch.optim.adam import Adam
 import ptp_utils
 import seq_aligner
 
-LOW_RESOURCE = False 
+LOW_RESOURCE = False
 device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')
 
 global model
@@ -24,18 +24,22 @@ global GUIDANCE_SCALE
 global MAX_NUM_WORDS
 global tokenizer
 
+
 # Init is run on server startup
 # Load your model to GPU as a global variable here using the variable name "model"
 def init():
     global model
     hf_auth_token = os.getenv("HF_AUTH_TOKEN")
-    
-    scheduler = DDIMScheduler(beta_start=0.00085, beta_end=0.012, beta_schedule="scaled_linear", clip_sample=False, set_alpha_to_one=False)
-    model = StableDiffusionPipeline.from_pretrained("CompVis/stable-diffusion-v1-4", scheduler=scheduler, use_auth_token=hf_auth_token).to("cuda").to(device)
+
+    scheduler = DDIMScheduler(beta_start=0.00085, beta_end=0.012, beta_schedule="scaled_linear", clip_sample=False,
+                              set_alpha_to_one=False)
+    model = StableDiffusionPipeline.from_pretrained("CompVis/stable-diffusion-v1-4", scheduler=scheduler,
+                                                    use_auth_token=hf_auth_token).to("cuda").to(device)
+
 
 # Inference is run for every server call
 # Reference your preloaded global model variable here.
-def inference(model_inputs:dict) -> dict:
+def inference(model_inputs: dict) -> dict:
     global model
 
     print("parsing out your arguments", model_inputs)
@@ -48,24 +52,26 @@ def inference(model_inputs:dict) -> dict:
     height = model_inputs.get('height', 512)
     width = model_inputs.get('width', 512)
 
-    cross_replace_steps = model_inputs.get('cross_replace_steps', {'default_': .8,})
+    cross_replace_steps = model_inputs.get('cross_replace_steps', {'default_': .8, })
     self_replace_steps = model_inputs.get('self_replace_steps', .5)
     blend_word = model_inputs.get('blend_word', None)
     # not 100% sure if we have to convert from lists to tuples, but make it work first
     if blend_word is not None:
-        blend_word = tuple(tuple(l) for l in blend_word) # ((('blue',), ("red",))) # for local edit. If it is not local yet - use only the source object: blend_word = ((('cat',), ("cat",))).
-    eq_params = model_inputs.get('eq_params', None) # {"words": ("red",), "values": (2,)} # amplify attention to the word "red" by *2
+        blend_word = tuple(tuple(l) for l in
+                           blend_word)  # ((('blue',), ("red",))) # for local edit. If it is not local yet - use only the source object: blend_word = ((('cat',), ("cat",))).
+    eq_params = model_inputs.get('eq_params',
+                                 None)  # {"words": ("red",), "values": (2,)} # amplify attention to the word "red" by *2
     # not 100% sure if we have to convert from lists to tuples, but make it work first
     if eq_params is not None:
         eq_params["words"] = tuple(eq_params["words"])
         eq_params["values"] = tuple(eq_params["values"])
     # print("Image is highly affected by the self_replace_steps, usually 0.4 is a good default value, but you may want to try the range 0.3,0.4,0.5,0.7 ")
-    
-    #If "seed" is not sent, we won't specify a seed in the call
+
+    # If "seed" is not sent, we won't specify a seed in the call
     generator = None
     if input_seed is not None:
         generator = torch.Generator("cuda").manual_seed(input_seed)
-    
+
     if prompts is None:
         return {'message': "No prompt provided"}
     if image_base64 is None:
@@ -73,9 +79,9 @@ def inference(model_inputs:dict) -> dict:
 
     input_image = Image.open(BytesIO(base64.b64decode(image_base64.encode('utf-8'))))
     input_image_arr = np.array(input_image)[:, :, :3]
-    
-    #their code sucks
-    global NUM_DDIM_STEPS 
+
+    # their code sucks
+    global NUM_DDIM_STEPS
     global GUIDANCE_SCALE
     global MAX_NUM_WORDS
     NUM_DDIM_STEPS = num_inference_steps
@@ -89,26 +95,32 @@ def inference(model_inputs:dict) -> dict:
     global tokenizer
     tokenizer = ldm_stable.tokenizer
     null_inversion = NullInversion(ldm_stable)
-    controller = make_controller(prompts, True, cross_replace_steps, self_replace_steps, blend_word, eq_params)
+    is_replace = len(prompts[0]) == len(prompts[1])
+    controller = make_controller(prompts, is_replace, cross_replace_steps, self_replace_steps,
+                                 blend_word, eq_params)
 
     # Run the model
     # with autocast("cuda"):
 
     # the num_inner_steps=10 makes this 500(50*10)! Not sure if that's really necessary
-    #WDYTM???
-    #print("Modify or remove offsets according to your image!")
+    # WDYTM???
+    # print("Modify or remove offsets according to your image!")
     print("running inversion")
     invStart = time.monotonic_ns()
-    (image_gt, image_enc), x_t, uncond_embeddings = null_inversion.invert(input_image_arr, prompts[0], num_inner_steps=10, offsets=(0,0,0,0), verbose=True)
-    print(f"finished inversion in {(time.monotonic_ns() - invStart)/1_000_000_000}s")
+    (image_gt, image_enc), x_t, uncond_embeddings = null_inversion.invert(input_image_arr, prompts[0],
+                                                                          num_inner_steps=10, offsets=(0, 0, 0, 0),
+                                                                          verbose=True)
+    print(f"finished inversion in {(time.monotonic_ns() - invStart) / 1_000_000_000}s")
 
     print("running ldm stable")
     ldmStart = time.monotonic_ns()
-    images, x_t = text2image_ldm_stable(ldm_stable, prompts, controller, latent=x_t, num_inference_steps=num_inference_steps, guidance_scale=GUIDANCE_SCALE, generator=generator, uncond_embeddings=uncond_embeddings)
-    print(f"finished ldm stable in {(time.monotonic_ns() - ldmStart)/1_000_000_000}s")
+    images, x_t = text2image_ldm_stable(ldm_stable, prompts, controller, latent=x_t,
+                                        num_inference_steps=num_inference_steps, guidance_scale=GUIDANCE_SCALE,
+                                        generator=generator, uncond_embeddings=uncond_embeddings)
+    print(f"finished ldm stable in {(time.monotonic_ns() - ldmStart) / 1_000_000_000}s")
 
     buffered = BytesIO()
-    conv_images(images).save(buffered,format="PNG")
+    conv_images(images).save(buffered, format="PNG")
     image_base64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
 
     # Return the results as a dictionary
@@ -141,23 +153,24 @@ def conv_images(images, num_rows=1, offset_ratio=0.02):
     pil_img = Image.fromarray(image_)
     return pil_img
 
+
 class LocalBlend:
-    
+
     def get_mask(self, maps, alpha, use_pool, x_t):
         k = 1
         maps = (maps * alpha).sum(-1).mean(1)
         if use_pool:
-            maps = nnf.max_pool2d(maps, (k * 2 + 1, k * 2 +1), (1, 1), padding=(k, k))
+            maps = nnf.max_pool2d(maps, (k * 2 + 1, k * 2 + 1), (1, 1), padding=(k, k))
         mask = nnf.interpolate(maps, size=(x_t.shape[2:]))
         mask = mask / mask.max(2, keepdims=True)[0].max(3, keepdims=True)[0]
-        mask = mask.gt(self.th[1-int(use_pool)])
+        mask = mask.gt(self.th[1 - int(use_pool)])
         mask = mask[:1] + mask
         return mask
-    
+
     def __call__(self, x_t, attention_store):
         self.counter += 1
         if self.counter > self.start_blend:
-           
+
             maps = attention_store["down_cross"][2:4] + attention_store["up_cross"][:3]
             maps = [item.reshape(self.alpha_layers.shape[0], -1, 1, 16, 16, MAX_NUM_WORDS) for item in maps]
             maps = torch.cat(maps, dim=1)
@@ -168,18 +181,19 @@ class LocalBlend:
             mask = mask.float()
             x_t = x_t[:1] + mask * (x_t - x_t[:1])
         return x_t
-       
-    def __init__(self, prompts: List[str], words: [List[List[str]]], substruct_words=None, start_blend=0.2, th=(.3, .3)):
-        alpha_layers = torch.zeros(len(prompts),  1, 1, 1, 1, MAX_NUM_WORDS)
+
+    def __init__(self, prompts: List[str], words: [List[List[str]]], substruct_words=None, start_blend=0.2,
+                 th=(.3, .3)):
+        alpha_layers = torch.zeros(len(prompts), 1, 1, 1, 1, MAX_NUM_WORDS)
         for i, (prompt, words_) in enumerate(zip(prompts, words)):
             if type(words_) is str:
                 words_ = [words_]
             for word in words_:
                 ind = ptp_utils.get_word_inds(prompt, word, tokenizer)
                 alpha_layers[i, :, :, :, :, ind] = 1
-        
+
         if substruct_words is not None:
-            substruct_layers = torch.zeros(len(prompts),  1, 1, 1, 1, MAX_NUM_WORDS)
+            substruct_layers = torch.zeros(len(prompts), 1, 1, 1, 1, MAX_NUM_WORDS)
             for i, (prompt, words_) in enumerate(zip(prompts, substruct_words)):
                 if type(words_) is str:
                     words_ = [words_]
@@ -191,35 +205,35 @@ class LocalBlend:
             self.substruct_layers = None
         self.alpha_layers = alpha_layers.to(device)
         self.start_blend = int(start_blend * NUM_DDIM_STEPS)
-        self.counter = 0 
-        self.th=th
-        
-        
+        self.counter = 0
+        self.th = th
+
+
 class EmptyControl:
     def step_callback(self, x_t):
         return x_t
-    
+
     def between_steps(self):
         return
-    
+
     def __call__(self, attn, is_cross: bool, place_in_unet: str):
         return attn
 
-    
+
 class AttentionControl(abc.ABC):
-    
+
     def step_callback(self, x_t):
         return x_t
-    
+
     def between_steps(self):
         return
-    
+
     @property
     def num_uncond_att_layers(self):
         return self.num_att_layers if LOW_RESOURCE else 0
-    
+
     @abc.abstractmethod
-    def forward (self, attn, is_cross: bool, place_in_unet: str):
+    def forward(self, attn, is_cross: bool, place_in_unet: str):
         raise NotImplementedError
 
     def __call__(self, attn, is_cross: bool, place_in_unet: str):
@@ -235,7 +249,7 @@ class AttentionControl(abc.ABC):
             self.cur_step += 1
             self.between_steps()
         return attn
-    
+
     def reset(self):
         self.cur_step = 0
         self.cur_att_layer = 0
@@ -245,8 +259,9 @@ class AttentionControl(abc.ABC):
         self.num_att_layers = -1
         self.cur_att_layer = 0
 
+
 class SpatialReplace(EmptyControl):
-    
+
     def step_callback(self, x_t):
         if self.cur_step < self.stop_inject:
             b = x_t.shape[0]
@@ -256,14 +271,14 @@ class SpatialReplace(EmptyControl):
     def __init__(self, stop_inject: float):
         super(SpatialReplace, self).__init__()
         self.stop_inject = int((1 - stop_inject) * NUM_DDIM_STEPS)
-        
+
 
 class AttentionStore(AttentionControl):
 
     @staticmethod
     def get_empty_store():
         return {"down_cross": [], "mid_cross": [], "up_cross": [],
-                "down_self": [],  "mid_self": [],  "up_self": []}
+                "down_self": [], "mid_self": [], "up_self": []}
 
     def forward(self, attn, is_cross: bool, place_in_unet: str):
         key = f"{place_in_unet}_{'cross' if is_cross else 'self'}"
@@ -281,9 +296,9 @@ class AttentionStore(AttentionControl):
         self.step_store = self.get_empty_store()
 
     def get_average_attention(self):
-        average_attention = {key: [item / self.cur_step for item in self.attention_store[key]] for key in self.attention_store}
+        average_attention = {key: [item / self.cur_step for item in self.attention_store[key]] for key in
+                             self.attention_store}
         return average_attention
-
 
     def reset(self):
         super(AttentionStore, self).reset()
@@ -295,25 +310,25 @@ class AttentionStore(AttentionControl):
         self.step_store = self.get_empty_store()
         self.attention_store = {}
 
-        
+
 class AttentionControlEdit(AttentionStore, abc.ABC):
-    
+
     def step_callback(self, x_t):
         if self.local_blend is not None:
             x_t = self.local_blend(x_t, self.attention_store)
         return x_t
-        
+
     def replace_self_attention(self, attn_base, att_replace, place_in_unet):
         if att_replace.shape[2] <= 32 ** 2:
             attn_base = attn_base.unsqueeze(0).expand(att_replace.shape[0], *attn_base.shape)
             return attn_base
         else:
             return att_replace
-    
+
     @abc.abstractmethod
     def replace_cross_attention(self, attn_base, att_replace):
         raise NotImplementedError
-    
+
     def forward(self, attn, is_cross: bool, place_in_unet: str):
         super(AttentionControlEdit, self).forward(attn, is_cross, place_in_unet)
         if is_cross or (self.num_self_replace[0] <= self.cur_step < self.num_self_replace[1]):
@@ -322,35 +337,38 @@ class AttentionControlEdit(AttentionStore, abc.ABC):
             attn_base, attn_repalce = attn[0], attn[1:]
             if is_cross:
                 alpha_words = self.cross_replace_alpha[self.cur_step]
-                attn_repalce_new = self.replace_cross_attention(attn_base, attn_repalce) * alpha_words + (1 - alpha_words) * attn_repalce
+                attn_repalce_new = self.replace_cross_attention(attn_base, attn_repalce) * alpha_words + (
+                        1 - alpha_words) * attn_repalce
                 attn[1:] = attn_repalce_new
             else:
                 attn[1:] = self.replace_self_attention(attn_base, attn_repalce, place_in_unet)
             attn = attn.reshape(self.batch_size * h, *attn.shape[2:])
         return attn
-    
+
     def __init__(self, prompts, num_steps: int,
                  cross_replace_steps: Union[float, Tuple[float, float], Dict[str, Tuple[float, float]]],
                  self_replace_steps: Union[float, Tuple[float, float]],
                  local_blend: Optional[LocalBlend]):
         super(AttentionControlEdit, self).__init__()
         self.batch_size = len(prompts)
-        self.cross_replace_alpha = ptp_utils.get_time_words_attention_alpha(prompts, num_steps, cross_replace_steps, tokenizer).to(device)
+        self.cross_replace_alpha = ptp_utils.get_time_words_attention_alpha(prompts, num_steps, cross_replace_steps,
+                                                                            tokenizer).to(device)
         if type(self_replace_steps) is float:
             self_replace_steps = 0, self_replace_steps
         self.num_self_replace = int(num_steps * self_replace_steps[0]), int(num_steps * self_replace_steps[1])
         self.local_blend = local_blend
 
+
 class AttentionReplace(AttentionControlEdit):
 
     def replace_cross_attention(self, attn_base, att_replace):
         return torch.einsum('hpw,bwn->bhpn', attn_base, self.mapper)
-      
+
     def __init__(self, prompts, num_steps: int, cross_replace_steps: float, self_replace_steps: float,
                  local_blend: Optional[LocalBlend] = None):
         super(AttentionReplace, self).__init__(prompts, num_steps, cross_replace_steps, self_replace_steps, local_blend)
         self.mapper = seq_aligner.get_replacement_mapper(prompts, tokenizer).to(device)
-        
+
 
 class AttentionRefine(AttentionControlEdit):
 
@@ -378,24 +396,27 @@ class AttentionReweight(AttentionControlEdit):
         return attn_replace
 
     def __init__(self, prompts, num_steps: int, cross_replace_steps: float, self_replace_steps: float, equalizer,
-                local_blend: Optional[LocalBlend] = None, controller: Optional[AttentionControlEdit] = None):
-        super(AttentionReweight, self).__init__(prompts, num_steps, cross_replace_steps, self_replace_steps, local_blend)
+                 local_blend: Optional[LocalBlend] = None, controller: Optional[AttentionControlEdit] = None):
+        super(AttentionReweight, self).__init__(prompts, num_steps, cross_replace_steps, self_replace_steps,
+                                                local_blend)
         self.equalizer = equalizer.to(device)
         self.prev_controller = controller
 
 
 def get_equalizer(text: str, word_select: Union[int, Tuple[int, ...]], values: Union[List[float],
-                  Tuple[float, ...]]):
+Tuple[float, ...]]):
     if type(word_select) is int or type(word_select) is str:
         word_select = (word_select,)
     equalizer = torch.ones(1, 77)
-    
+
     for word, val in zip(word_select, values):
         inds = ptp_utils.get_word_inds(text, word, tokenizer)
         equalizer[:, inds] = val
     return equalizer
 
-def aggregate_attention(attention_store: AttentionStore, res: int, from_where: List[str], is_cross: bool, select: int, prompts: List[str]):
+
+def aggregate_attention(attention_store: AttentionStore, res: int, from_where: List[str], is_cross: bool, select: int,
+                        prompts: List[str]):
     out = []
     attention_maps = attention_store.get_average_attention()
     num_pixels = res ** 2
@@ -408,20 +429,26 @@ def aggregate_attention(attention_store: AttentionStore, res: int, from_where: L
     out = out.sum(0) / out.shape[0]
     return out.cpu()
 
-def make_controller(prompts: List[str], is_replace_controller: bool, cross_replace_steps: Dict[str, float], self_replace_steps: float, blend_words=None, equilizer_params=None) -> AttentionControlEdit:
+
+def make_controller(prompts: List[str], is_replace_controller: bool, cross_replace_steps: Dict[str, float],
+                    self_replace_steps: float, blend_words=None, equilizer_params=None) -> AttentionControlEdit:
     if blend_words is None:
         lb = None
     else:
         lb = LocalBlend(prompts, blend_words)
     if is_replace_controller:
-        controller = AttentionReplace(prompts, NUM_DDIM_STEPS, cross_replace_steps=cross_replace_steps, self_replace_steps=self_replace_steps, local_blend=lb)
+        controller = AttentionReplace(prompts, NUM_DDIM_STEPS, cross_replace_steps=cross_replace_steps,
+                                      self_replace_steps=self_replace_steps, local_blend=lb)
     else:
-        controller = AttentionRefine(prompts, NUM_DDIM_STEPS, cross_replace_steps=cross_replace_steps, self_replace_steps=self_replace_steps, local_blend=lb)
+        controller = AttentionRefine(prompts, NUM_DDIM_STEPS, cross_replace_steps=cross_replace_steps,
+                                     self_replace_steps=self_replace_steps, local_blend=lb)
     if equilizer_params is not None:
         eq = get_equalizer(prompts[1], equilizer_params["words"], equilizer_params["values"])
         controller = AttentionReweight(prompts, NUM_DDIM_STEPS, cross_replace_steps=cross_replace_steps,
-                                       self_replace_steps=self_replace_steps, equalizer=eq, local_blend=lb, controller=controller)
+                                       self_replace_steps=self_replace_steps, equalizer=eq, local_blend=lb,
+                                       controller=controller)
     return controller
+
 
 def load_512(image_path, left=0, right=0, top=0, bottom=0):
     if type(image_path) is str:
@@ -429,11 +456,11 @@ def load_512(image_path, left=0, right=0, top=0, bottom=0):
     else:
         image = image_path
     h, w, c = image.shape
-    left = min(left, w-1)
+    left = min(left, w - 1)
     right = min(right, w - left - 1)
     top = min(top, h - left - 1)
     bottom = min(bottom, h - top - 1)
-    image = image[top:h-bottom, left:w-right]
+    image = image[top:h - bottom, left:w - right]
     h, w, c = image.shape
     if h < w:
         offset = (w - h) // 2
@@ -446,19 +473,23 @@ def load_512(image_path, left=0, right=0, top=0, bottom=0):
 
 
 class NullInversion:
-    
-    def prev_step(self, model_output: Union[torch.FloatTensor, np.ndarray], timestep: int, sample: Union[torch.FloatTensor, np.ndarray]):
+
+    def prev_step(self, model_output: Union[torch.FloatTensor, np.ndarray], timestep: int,
+                  sample: Union[torch.FloatTensor, np.ndarray]):
         prev_timestep = timestep - self.scheduler.config.num_train_timesteps // self.scheduler.num_inference_steps
         alpha_prod_t = self.scheduler.alphas_cumprod[timestep]
-        alpha_prod_t_prev = self.scheduler.alphas_cumprod[prev_timestep] if prev_timestep >= 0 else self.scheduler.final_alpha_cumprod
+        alpha_prod_t_prev = self.scheduler.alphas_cumprod[
+            prev_timestep] if prev_timestep >= 0 else self.scheduler.final_alpha_cumprod
         beta_prod_t = 1 - alpha_prod_t
         pred_original_sample = (sample - beta_prod_t ** 0.5 * model_output) / alpha_prod_t ** 0.5
         pred_sample_direction = (1 - alpha_prod_t_prev) ** 0.5 * model_output
         prev_sample = alpha_prod_t_prev ** 0.5 * pred_original_sample + pred_sample_direction
         return prev_sample
-    
-    def next_step(self, model_output: Union[torch.FloatTensor, np.ndarray], timestep: int, sample: Union[torch.FloatTensor, np.ndarray]):
-        timestep, next_timestep = min(timestep - self.scheduler.config.num_train_timesteps // self.scheduler.num_inference_steps, 999), timestep
+
+    def next_step(self, model_output: Union[torch.FloatTensor, np.ndarray], timestep: int,
+                  sample: Union[torch.FloatTensor, np.ndarray]):
+        timestep, next_timestep = min(
+            timestep - self.scheduler.config.num_train_timesteps // self.scheduler.num_inference_steps, 999), timestep
         alpha_prod_t = self.scheduler.alphas_cumprod[timestep] if timestep >= 0 else self.scheduler.final_alpha_cumprod
         alpha_prod_t_next = self.scheduler.alphas_cumprod[next_timestep]
         beta_prod_t = 1 - alpha_prod_t
@@ -466,7 +497,7 @@ class NullInversion:
         next_sample_direction = (1 - alpha_prod_t_next) ** 0.5 * model_output
         next_sample = alpha_prod_t_next ** 0.5 * next_original_sample + next_sample_direction
         return next_sample
-    
+
     def get_noise_pred_single(self, latents, t, context):
         noise_pred = self.model.unet(latents, t, encoder_hidden_states=context)["sample"]
         return noise_pred
@@ -578,8 +609,9 @@ class NullInversion:
                 context = torch.cat([uncond_embeddings, cond_embeddings])
                 latent_cur = self.get_noise_pred(latent_cur, t, False, context)
         return uncond_embeddings_list
-    
-    def invert(self, image_path: str, prompt: str, offsets=(0,0,0,0), num_inner_steps=10, early_stop_epsilon=1e-5, verbose=False):
+
+    def invert(self, image_path: str, prompt: str, offsets=(0, 0, 0, 0), num_inner_steps=10, early_stop_epsilon=1e-5,
+               verbose=False):
         self.init_prompt(prompt)
         ptp_utils.register_attention_control(self.model, None)
         image_gt = load_512(image_path, *offsets)
@@ -590,8 +622,7 @@ class NullInversion:
             print("Null-text optimization...")
         uncond_embeddings = self.null_optimization(ddim_latents, num_inner_steps, early_stop_epsilon)
         return (image_gt, image_rec), ddim_latents[-1], uncond_embeddings
-        
-    
+
     def __init__(self, model):
         scheduler = DDIMScheduler(beta_start=0.00085, beta_end=0.012, beta_schedule="scaled_linear", clip_sample=False,
                                   set_alpha_to_one=False)
@@ -601,23 +632,24 @@ class NullInversion:
         self.prompt = None
         self.context = None
 
+
 @torch.no_grad()
 def text2image_ldm_stable(
-    model,
-    prompt:  List[str],
-    controller,
-    num_inference_steps: int = 50,
-    guidance_scale: Optional[float] = 7.5,
-    generator: Optional[torch.Generator] = None,
-    latent: Optional[torch.FloatTensor] = None,
-    uncond_embeddings=None,
-    start_time=50,
-    return_type='image'
+        model,
+        prompt: List[str],
+        controller,
+        num_inference_steps: int = 50,
+        guidance_scale: Optional[float] = 7.5,
+        generator: Optional[torch.Generator] = None,
+        latent: Optional[torch.FloatTensor] = None,
+        uncond_embeddings=None,
+        start_time=50,
+        return_type='image'
 ):
     batch_size = len(prompt)
     ptp_utils.register_attention_control(model, controller)
     height = width = 512
-    
+
     text_input = model.tokenizer(
         prompt,
         padding="max_length",
@@ -644,7 +676,7 @@ def text2image_ldm_stable(
         else:
             context = torch.cat([uncond_embeddings_, text_embeddings])
         latents = ptp_utils.diffusion_step(model, controller, latents, context, t, guidance_scale, low_resource=False)
-        
+
     if return_type == 'image':
         image = ptp_utils.latent2image(model.vae, latents)
     else:
