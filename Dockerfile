@@ -12,7 +12,7 @@ COPY requirements.txt requirements.txt
 RUN pip3 install -r requirements.txt
 
 # We add the banana boilerplate here
-COPY server.py .
+COPY server.py ./
 EXPOSE 8000
 
 # Add your huggingface auth key here
@@ -25,6 +25,6 @@ COPY download.py .
 RUN python3 download.py
 
 # Add your custom app code, init() and inference()
-COPY *.py .
+COPY *.py ./
 
 CMD python3 -u server.py
