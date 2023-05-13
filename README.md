@@ -5,7 +5,7 @@ AKA editing a real image with text.
 
 This is banana.dev conversion of https://github.com/google/prompt-to-prompt#editing-real-images
 
-![example](./example.png)
+![example image of a woman changing her scarf color](./example.png)
 
 ## Usage
 
